@@ -13,8 +13,12 @@ flask-cors>=6.0.0
 # OpenAI SDK (unified OpenAI format for LLM calls)
 openai>=1.0.0
 
-# ============= Zep Cloud =============
-zep-cloud==3.13.0
+# ============= Knowledge Graph (Graphiti + Kuzu) =============
+# Self-hosted, embedded — replaces Zep Cloud
+graphiti-core[kuzu,anthropic]
+
+# ============= Zep Cloud (LEGACY — optional fallback, not imported at runtime) =============
+# zep-cloud==3.13.0  # Uncomment only if you need the Zep fallback path
 
 # ============= OASIS Social Media Simulation =============
 # OASIS social simulation framework
