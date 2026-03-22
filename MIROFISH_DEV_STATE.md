@@ -1,6 +1,6 @@
 # MiroFish Development State
 
-_Last updated: 2026-03-22 13:57 PDT_
+_Last updated: 2026-03-22 14:57 PDT_
 
 ## Project Overview
 MiroFish is a multi-agent swarm intelligence simulation engine. We're converting it into a tool for OpenClaw and Claude Code (MCP server) with Anthropic LLM support and self-hosted dependencies.
@@ -123,14 +123,34 @@ All 5 tasks delivered. Phase 3 acceptance criteria:
 - `SimConfig` validates with pydantic v2 (Phase 3b, commit `293e751`)
 - All script files English-only (Phase 3a, commit `e305230`)
 
-### Phase 4: MCP Server Wrapper
-**Status:** Not started (depends on Phase 3, now unblocked)
+### Phase 4: MCP Server Wrapper 🔄 IN PROGRESS
+**Status:** Architecture designed (Hal, 2026-03-22), CC to implement
 **Goal:** Expose MiroFish as MCP tools for Claude Code / OpenClaw
-**Details:**
-- Evaluate Graphiti's built-in MCP server first (ships with graphiti-core)
-- Tool surface: `create_simulation`, `run_simulation`, `inject_variable`, `get_results`, `query_graph`
-- If built-in MCP server covers enough, extend it; otherwise build thin wrapper
-- Phase 3 `HeadlessRunner` + `report.md` output are the bridge
+**Design doc:** `docs/phase4-mcp-design.md`
+
+**Decision: Custom thin wrapper, NOT Graphiti's built-in MCP server**
+- Graphiti's `mcp_server/` requires FalkorDB (Redis), incompatible with our Kuzu setup
+- Their server exposes raw graph primitives, not MiroFish simulation tools
+- Solution: thin `backend/mirofish_mcp.py` using `mcp` Python SDK (FastMCP)
+
+**Tool surface (Tier 1+2 for launch):**
+- `create_simulation` — validate + return SimConfig JSON
+- `run_simulation` — execute full HeadlessRunner pipeline, return SimResult
+- `get_simulation_status` — query runner state for a sim_dir
+- `build_knowledge_graph` — build graph from document paths, return graph_id
+- `search_graph` — semantic search over graph facts
+- `get_graph_stats` — node/edge counts for a graph
+
+**Tasks for CC:**
+1. **Task 4a** — `backend/mirofish_mcp.py` — FastMCP server, Tier 1+2 tools
+2. **Task 4b** — `backend/requirements.txt` — add `mcp[cli]>=1.0.0`
+3. **Task 4c** — `pyproject.toml` — add `mirofish-mcp` entry point
+4. **Task 4d** — `docs/MCP_USAGE.md` — usage guide for Claude Desktop + OpenClaw
+
+**Open questions for CC to resolve in 4a:**
+- Is `knowledge_graph.py` async or sync? (determines if asyncio.run() needed)
+- Does `SimulationRunner.get_run_state()` need Flask app context or reads disk directly?
+- Kuzu thread safety: may need asyncio.Lock for concurrent graph writes
 
 ## Architecture Notes
 
