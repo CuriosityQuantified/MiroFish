@@ -1,6 +1,6 @@
 # MiroFish Development State
 
-_Last updated: 2026-03-22 13:10 PDT_
+_Last updated: 2026-03-22 13:57 PDT_
 
 ## Project Overview
 MiroFish is a multi-agent swarm intelligence simulation engine. We're converting it into a tool for OpenClaw and Claude Code (MCP server) with Anthropic LLM support and self-hosted dependencies.
@@ -57,9 +57,9 @@ MiroFish is a multi-agent swarm intelligence simulation engine. We're converting
 **Tasks for CC:**
 1. **Task 3a** ✅ DONE — Translation commit `e305230` covers scripts + simulation.py API
 2. **Task 3b** ✅ DONE — `backend/app/models/sim_config.py` + `backend/mirofish-config.schema.json` committed `293e751` (Hal committed, CC authored)
-3. **Task 3c** 🔜 NEXT — Create `backend/app/services/headless_runner.py` — see spec below
-4. **Task 3d** 🔜 — Create `backend/mirofish_cli.py` — argparse CLI (can do after 3c)
-5. **Task 3e** 🔜 — Ensure `report_agent.py` writes `report.md` to `{sim_dir}/report.md`
+3. **Task 3c** ✅ DONE — `backend/app/services/headless_runner.py` committed `2825fee` (Hal)
+4. **Task 3d** ✅ DONE — `backend/mirofish_cli.py` committed `2825fee` (Hal)
+5. **Task 3e** ✅ DONE — HeadlessRunner._generate_report() copies full_report.md → {sim_dir}/report.md `2825fee` (Hal)
 
 ### Task 3c Spec — `HeadlessRunner` (for CC)
 
@@ -116,8 +116,15 @@ In `ReportAgent.generate_report()`, after writing `full_report.md` to the report
 - `SimConfig` validates with pydantic v2
 - All script files English-only
 
+### Phase 3 Complete ✅
+All 5 tasks delivered. Phase 3 acceptance criteria:
+- `python backend/mirofish_cli.py run --config test_config.json` runs without Flask UI
+- `report.md` written to sim output dir via HeadlessRunner._generate_report()
+- `SimConfig` validates with pydantic v2 (Phase 3b, commit `293e751`)
+- All script files English-only (Phase 3a, commit `e305230`)
+
 ### Phase 4: MCP Server Wrapper
-**Status:** Not started (depends on Phase 3)
+**Status:** Not started (depends on Phase 3, now unblocked)
 **Goal:** Expose MiroFish as MCP tools for Claude Code / OpenClaw
 **Details:**
 - Evaluate Graphiti's built-in MCP server first (ships with graphiti-core)
