@@ -16,8 +16,14 @@ dependencies = [
     # LLM related
     "openai>=1.0.0",
     
-    # Zep Cloud
-    "zep-cloud==3.13.0",
+    # Knowledge Graph (Graphiti + Kuzu — self-hosted, replaces Zep Cloud)
+    "graphiti-core[kuzu,anthropic]",
+
+    # MCP server
+    "mcp[cli]>=1.0.0",
+
+    # Zep Cloud (LEGACY — kept for optional fallback, not imported at runtime)
+    # "zep-cloud==3.13.0",
     
     # OASIS social media simulation
     "camel-oasis==0.2.5",
@@ -50,6 +56,10 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
+
+[project.scripts]
+mirofish = "mirofish_cli:main"
+mirofish-mcp = "mirofish_mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
