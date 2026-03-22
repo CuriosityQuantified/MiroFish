@@ -1,11 +1,11 @@
 """
-模拟IPC通信模块
-用于Flask后端和模拟脚本之间的进程间通信
+Simulation IPC Communication Module
+Inter-process communication between Flask backend and simulation scripts
 
-通过文件系统实现简单的命令/响应模式：
-1. Flask写入命令到 commands/ 目录
-2. 模拟脚本轮询命令目录，执行命令并写入响应到 responses/ 目录
-3. Flask轮询响应目录获取结果
+Implements simple command/response pattern via filesystem:
+1. Flask writes commands to commands/ directory
+2. Simulation script polls command directory, executes commands and writes responses to responses/ directory
+3. Flask polls response directory for results
 """
 
 import os
@@ -23,14 +23,14 @@ logger = get_logger('mirofish.simulation_ipc')
 
 
 class CommandType(str, Enum):
-    """命令类型"""
-    INTERVIEW = "interview"           # 单个Agent采访
-    BATCH_INTERVIEW = "batch_interview"  # 批量采访
-    CLOSE_ENV = "close_env"           # 关闭环境
+    """Command type"""
+    INTERVIEW = "interview"           # Single Agent interview
+    BATCH_INTERVIEW = "batch_interview"  # Batch interview
+    CLOSE_ENV = "close_env"           # Close environment
 
 
 class CommandStatus(str, Enum):
-    """命令状态"""
+    """Command status"""
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -39,7 +39,7 @@ class CommandStatus(str, Enum):
 
 @dataclass
 class IPCCommand:
-    """IPC命令"""
+    """IPC command"""
     command_id: str
     command_type: CommandType
     args: Dict[str, Any]
@@ -127,14 +127,14 @@ class SimulationIPCClient:
         Args:
             command_type: 命令类型
             args: 命令参数
-            timeout: 超时时间（秒）
+            timeout: timeout时间（秒）
             poll_interval: 轮询间隔（秒）
             
         Returns:
             IPCResponse
             
         Raises:
-            TimeoutError: 等待响应超时
+            TimeoutError: 等待响应timeout
         """
         command_id = str(uuid.uuid4())
         command = IPCCommand(
@@ -143,14 +143,14 @@ class SimulationIPCClient:
             args=args
         )
         
-        # 写入命令文件
+        # Write命令文件
         command_file = os.path.join(self.commands_dir, f"{command_id}.json")
         with open(command_file, 'w', encoding='utf-8') as f:
             json.dump(command.to_dict(), f, ensure_ascii=False, indent=2)
         
         logger.info(f"发送IPC命令: {command_type.value}, command_id={command_id}")
         
-        # 等待响应
+        # Wait响应
         response_file = os.path.join(self.responses_dir, f"{command_id}.json")
         start_time = time.time()
         
@@ -161,7 +161,7 @@ class SimulationIPCClient:
                         response_data = json.load(f)
                     response = IPCResponse.from_dict(response_data)
                     
-                    # 清理命令和响应文件
+                    # Clean up命令and响应文件
                     try:
                         os.remove(command_file)
                         os.remove(response_file)
@@ -171,20 +171,20 @@ class SimulationIPCClient:
                     logger.info(f"收到IPC响应: command_id={command_id}, status={response.status.value}")
                     return response
                 except (json.JSONDecodeError, KeyError) as e:
-                    logger.warning(f"解析响应失败: {e}")
+                    logger.warning(f"解析响应Failed: {e}")
             
             time.sleep(poll_interval)
         
-        # 超时
-        logger.error(f"等待IPC响应超时: command_id={command_id}")
+        # timeout
+        logger.error(f"等待IPC响应timeout: command_id={command_id}")
         
-        # 清理命令文件
+        # Clean up命令文件
         try:
             os.remove(command_file)
         except OSError:
             pass
         
-        raise TimeoutError(f"等待命令响应超时 ({timeout}秒)")
+        raise TimeoutError(f"等待命令响应timeout ({timeout}秒)")
     
     def send_interview(
         self,
@@ -203,7 +203,7 @@ class SimulationIPCClient:
                 - "twitter": 只采访Twitter平台
                 - "reddit": 只采访Reddit平台  
                 - None: 双平台模拟时同时采访两个平台，单平台模拟时采访该平台
-            timeout: 超时时间
+            timeout: timeout时间
             
         Returns:
             IPCResponse，result字段包含采访结果
@@ -232,11 +232,11 @@ class SimulationIPCClient:
         
         Args:
             interviews: 采访列表，每个元素包含 {"agent_id": int, "prompt": str, "platform": str(可选)}
-            platform: 默认平台（可选，会被每个采访项的platform覆盖）
+            platform: 默认平台（可选，会被每个采访项'splatform覆盖）
                 - "twitter": 默认只采访Twitter平台
                 - "reddit": 默认只采访Reddit平台
                 - None: 双平台模拟时每个Agent同时采访两个平台
-            timeout: 超时时间
+            timeout: timeout时间
             
         Returns:
             IPCResponse，result字段包含所有采访结果
@@ -256,7 +256,7 @@ class SimulationIPCClient:
         发送关闭环境命令
         
         Args:
-            timeout: 超时时间
+            timeout: timeout时间
             
         Returns:
             IPCResponse
@@ -269,7 +269,7 @@ class SimulationIPCClient:
     
     def check_env_alive(self) -> bool:
         """
-        检查模拟环境是否存活
+        检查模拟环境YesNo存活
         
         通过检查 env_status.json 文件来判断
         """
@@ -331,15 +331,15 @@ class SimulationIPCServer:
     
     def poll_commands(self) -> Optional[IPCCommand]:
         """
-        轮询命令目录，返回第一个待处理的命令
+        轮询命令目录，返回第一个待处理's命令
         
         Returns:
-            IPCCommand 或 None
+            IPCCommand or None
         """
         if not os.path.exists(self.commands_dir):
             return None
         
-        # 按时间排序获取命令文件
+        # 按时间Sort获取命令文件
         command_files = []
         for filename in os.listdir(self.commands_dir):
             if filename.endswith('.json'):
@@ -354,7 +354,7 @@ class SimulationIPCServer:
                     data = json.load(f)
                 return IPCCommand.from_dict(data)
             except (json.JSONDecodeError, KeyError, OSError) as e:
-                logger.warning(f"读取命令文件失败: {filepath}, {e}")
+                logger.warning(f"读取命令文件Failed: {filepath}, {e}")
                 continue
         
         return None
@@ -370,7 +370,7 @@ class SimulationIPCServer:
         with open(response_file, 'w', encoding='utf-8') as f:
             json.dump(response.to_dict(), f, ensure_ascii=False, indent=2)
         
-        # 删除命令文件
+        # Delete命令文件
         command_file = os.path.join(self.commands_dir, f"{response.command_id}.json")
         try:
             os.remove(command_file)
@@ -378,7 +378,7 @@ class SimulationIPCServer:
             pass
     
     def send_success(self, command_id: str, result: Dict[str, Any]):
-        """发送成功响应"""
+        """发送Success响应"""
         self.send_response(IPCResponse(
             command_id=command_id,
             status=CommandStatus.COMPLETED,

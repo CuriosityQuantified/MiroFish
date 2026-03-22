@@ -1,6 +1,6 @@
 """
 动作日志记录器
-用于记录OASIS模拟中每个Agent的动作，供后端监控使用
+用于记录OASIS模拟in每个Agent's动作，供后端监控使用
 
 日志结构:
     sim_xxx/
@@ -9,7 +9,7 @@
     ├── reddit/
     │   └── actions.jsonl    # Reddit 平台动作日志
     ├── simulation.log       # 主模拟进程日志
-    └── run_state.json       # 运行状态（API 查询用）
+    └── run_state.json       # Run状态（API 查询用）
 """
 
 import json
@@ -28,7 +28,7 @@ class PlatformActionLogger:
         
         Args:
             platform: 平台名称 (twitter/reddit)
-            base_dir: 模拟目录的基础路径
+            base_dir: 模拟目录's基础路径
         """
         self.platform = platform
         self.base_dir = base_dir
@@ -134,14 +134,14 @@ class SimulationLogManager:
         self.reddit_logger: Optional[PlatformActionLogger] = None
         self._main_logger: Optional[logging.Logger] = None
         
-        # 设置主日志
+        # Set主日志
         self._setup_main_logger()
     
     def _setup_main_logger(self):
         """设置主模拟日志"""
         log_path = os.path.join(self.simulation_dir, "simulation.log")
         
-        # 创建 logger
+        # Create logger
         self._main_logger = logging.getLogger(f"simulation.{os.path.basename(self.simulation_dir)}")
         self._main_logger.setLevel(logging.INFO)
         self._main_logger.handlers.clear()

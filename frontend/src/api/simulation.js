@@ -33,7 +33,7 @@ export const getSimulation = (simulationId) => {
 }
 
 /**
- * 获取模拟的 Agent Profiles
+ * 获取模拟's Agent Profiles
  * @param {string} simulationId
  * @param {string} platform - 'reddit' | 'twitter'
  */
@@ -42,7 +42,7 @@ export const getSimulationProfiles = (simulationId, platform = 'reddit') => {
 }
 
 /**
- * 实时获取生成中的 Agent Profiles
+ * 实时获取generating's Agent Profiles
  * @param {string} simulationId
  * @param {string} platform - 'reddit' | 'twitter'
  */
@@ -59,9 +59,9 @@ export const getSimulationConfig = (simulationId) => {
 }
 
 /**
- * 实时获取生成中的模拟配置
+ * 实时获取generating's模拟配置
  * @param {string} simulationId
- * @returns {Promise} 返回配置信息，包含元数据和配置内容
+ * @returns {Promise} 返回配置信息，包含元数据and配置内容
  */
 export const getSimulationConfigRealtime = (simulationId) => {
   return service.get(`/api/simulation/${simulationId}/config/realtime`)
@@ -109,7 +109,7 @@ export const getRunStatusDetail = (simulationId) => {
 }
 
 /**
- * 获取模拟中的帖子
+ * 获取模拟in's帖子
  * @param {string} simulationId
  * @param {string} platform - 'reddit' | 'twitter'
  * @param {number} limit - 返回数量
