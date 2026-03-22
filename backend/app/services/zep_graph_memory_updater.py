@@ -1,6 +1,8 @@
 """
-Zep Graph Memory Update Service
-Dynamically update Agent activities from simulation into Zep graph
+Graph Memory Update Service
+Dynamically update Agent activities from simulation into knowledge graph.
+
+Backend: Graphiti + Kuzu (replaces Zep Cloud)
 """
 
 import os
@@ -12,12 +14,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
-
 from ..config import Config
 from ..utils.logger import get_logger
+from . import knowledge_graph as kg
 
-logger = get_logger('mirofish.zep_graph_memory_updater')
+logger = get_logger('mirofish.graph_memory_updater')
 
 
 @dataclass
@@ -230,19 +231,13 @@ class ZepGraphMemoryUpdater:
     
     def __init__(self, graph_id: str, api_key: Optional[str] = None):
         """
-        初始化更新器
-        
+        Initialize updater
+
         Args:
-            graph_id: Zep图谱ID
-            api_key: Zep API Key（可选，默认从配置读取）
+            graph_id: Graph group ID
+            api_key: Unused (kept for interface compat)
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEYis not configured")
-        
-        self.client = Zep(api_key=self.api_key)
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -402,28 +397,29 @@ class ZepGraphMemoryUpdater:
         episode_texts = [activity.to_episode_text() for activity in activities]
         combined_text = "\n".join(episode_texts)
         
-        # 带retry's发送
+        # Send with retry
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
+                kg.add_episode(
                     graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
+                    text=combined_text,
+                    source="text",
+                    name=f"sim_activity_{platform}_{int(time.time())}",
                 )
-                
+
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)
-                logger.info(f"Success批量发送 {len(activities)} 条{display_name}活动到图谱 {self.graph_id}")
-                logger.debug(f"批量内容Preview: {combined_text[:200]}...")
+                logger.info(f"Successfully sent {len(activities)} {display_name} activities to graph {self.graph_id}")
+                logger.debug(f"Batch content preview: {combined_text[:200]}...")
                 return
-                
+
             except Exception as e:
                 if attempt < self.MAX_RETRIES - 1:
-                    logger.warning(f"批量发送到ZepFailed (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    logger.warning(f"Batch send failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                 else:
-                    logger.error(f"批量发送到ZepFailed，已retry{self.MAX_RETRIES}次: {e}")
+                    logger.error(f"Batch send failed after {self.MAX_RETRIES} attempts: {e}")
                     self._failed_count += 1
     
     def _flush_remaining(self):

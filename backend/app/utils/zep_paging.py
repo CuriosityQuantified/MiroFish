@@ -1,7 +1,12 @@
-"""Zep Graph 分页读取工具。
+"""Zep Graph pagination utility (LEGACY).
 
-Zep 's node/edge 列表接口使用 UUID cursor 分页，
-本模块封装自动翻页逻辑（含单页retry），对调用方透明地返回完整列表。
+This module is kept for backward compatibility with any code that still
+imports fetch_all_nodes / fetch_all_edges.  With the Graphiti + Kuzu backend,
+these functions are no longer the primary path — knowledge_graph.py handles
+node/edge retrieval directly via the Kuzu driver.
+
+If zep_cloud is not installed, the functions raise RuntimeError with a clear
+message rather than an ImportError on import.
 """
 
 from __future__ import annotations
@@ -9,9 +14,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from typing import Any
-
-from zep_cloud import InternalServerError
-from zep_cloud.client import Zep
 
 from .logger import get_logger
 
@@ -22,6 +24,23 @@ _MAX_NODES = 2000
 _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_RETRY_DELAY = 2.0  # seconds, doubles each retry
 
+# Try importing zep_cloud; if unavailable, provide stub functions
+try:
+    from zep_cloud import InternalServerError
+    from zep_cloud.client import Zep
+    _ZEP_AVAILABLE = True
+except ImportError:
+    _ZEP_AVAILABLE = False
+    InternalServerError = Exception  # fallback type for except clause
+
+
+def _check_zep():
+    if not _ZEP_AVAILABLE:
+        raise RuntimeError(
+            "zep_cloud is not installed. Zep paging utilities require the zep-cloud package. "
+            "The default backend is now Graphiti + Kuzu — use knowledge_graph.py instead."
+        )
+
 
 def _fetch_page_with_retry(
     api_call: Callable[..., list[Any]],
@@ -31,7 +50,8 @@ def _fetch_page_with_retry(
     page_description: str = "page",
     **kwargs: Any,
 ) -> list[Any]:
-    """Single page request with exponential backoff retry. Only retries transient network/IO errors."""
+    """Single page request with exponential backoff retry."""
+    _check_zep()
     if max_retries < 1:
         raise ValueError("max_retries must be >= 1")
 
@@ -57,14 +77,15 @@ def _fetch_page_with_retry(
 
 
 def fetch_all_nodes(
-    client: Zep,
+    client,
     graph_id: str,
     page_size: int = _DEFAULT_PAGE_SIZE,
     max_items: int = _MAX_NODES,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
 ) -> list[Any]:
-    """Fetch graph nodes with pagination，最多返回 max_items 条（默认 2000）。每页请求自带retry。"""
+    """Fetch graph nodes with pagination (LEGACY — requires zep_cloud)."""
+    _check_zep()
     all_nodes: list[Any] = []
     cursor: str | None = None
     page_num = 0
@@ -103,13 +124,14 @@ def fetch_all_nodes(
 
 
 def fetch_all_edges(
-    client: Zep,
+    client,
     graph_id: str,
     page_size: int = _DEFAULT_PAGE_SIZE,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
 ) -> list[Any]:
-    """Fetch all graph edges with pagination，返回完整列表。每页请求自带retry。"""
+    """Fetch all graph edges with pagination (LEGACY — requires zep_cloud)."""
+    _check_zep()
     all_edges: list[Any] = []
     cursor: str | None = None
     page_num = 0

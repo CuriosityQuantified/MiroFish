@@ -45,7 +45,10 @@ class Config:
     # Orchestration and report generation: Sonnet 4.6
     LLM_ORCHESTRATION_MODEL = os.environ.get('LLM_ORCHESTRATION_MODEL', 'claude-sonnet-4-6')
     
-    # Zep configuration
+    # Knowledge Graph configuration (Graphiti + Kuzu)
+    KUZU_DB_PATH = os.environ.get('KUZU_DB_PATH', os.path.join(os.path.dirname(__file__), '../../data/kuzu_graph'))
+
+    # Zep configuration (legacy — optional fallback)
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
     
     # File upload configuration
@@ -86,7 +89,8 @@ class Config:
         else:
             if not cls.LLM_API_KEY:
                 errors.append("LLM_API_KEY is not configured")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY is not configured")
+        # ZEP_API_KEY is now optional (legacy fallback); Graphiti + Kuzu is default
+        # if not cls.ZEP_API_KEY:
+        #     errors.append("ZEP_API_KEY is not configured")
         return errors
 

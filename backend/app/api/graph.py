@@ -282,16 +282,8 @@ def build_graph():
     try:
         logger.info("=== Starting graph building ===")
         
-        # Check configuration
+        # Configuration check — Graphiti + Kuzu is embedded, no API key needed
         errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY is not configured")
-        if errors:
-            logger.error(f"Configuration error: {errors}")
-            return jsonify({
-                "success": False,
-                "error": "Configuration error: " + "; ".join(errors)
-            }), 500
         
         # Parse request
         data = request.get_json() or {}
@@ -382,7 +374,7 @@ def build_graph():
                 )
                 
                 # Create graph building service
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                builder = GraphBuilderService()
                 
                 # Chunking
                 task_manager.update_task(
@@ -400,7 +392,7 @@ def build_graph():
                 # Create graph
                 task_manager.update_task(
                     task_id,
-                    message="Creating Zep graph...",
+                    message="Creating knowledge graph...",
                     progress=10
                 )
                 graph_id = builder.create_graph(name=graph_name)
@@ -439,22 +431,8 @@ def build_graph():
                     progress_callback=add_progress_callback
                 )
                 
-                # Wait for Zep processing (check each episode's processed status)
-                task_manager.update_task(
-                    task_id,
-                    message="Waiting for Zep to process data...",
-                    progress=55
-                )
-                
-                def wait_progress_callback(msg, progress_ratio):
-                    progress = 55 + int(progress_ratio * 35)  # 55% - 90%
-                    task_manager.update_task(
-                        task_id,
-                        message=msg,
-                        progress=progress
-                    )
-                
-                builder._wait_for_episodes(episode_uuids, wait_progress_callback)
+                # Graphiti processes episodes synchronously during add_episode,
+                # so no separate wait step is needed (unlike Zep Cloud).
                 
                 # Get graph data
                 task_manager.update_task(
@@ -567,20 +545,14 @@ def get_graph_data(graph_id: str):
     Get graph data (nodes and edges)
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY is not configured"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         graph_data = builder.get_graph_data(graph_id)
-        
+
         return jsonify({
             "success": True,
             "data": graph_data
         })
-        
+
     except Exception as e:
         return jsonify({
             "success": False,
@@ -592,16 +564,10 @@ def get_graph_data(graph_id: str):
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
 def delete_graph(graph_id: str):
     """
-    Delete Zep graph
+    Delete graph
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY is not configured"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         builder.delete_graph(graph_id)
         
         return jsonify({
