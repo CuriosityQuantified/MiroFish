@@ -27,10 +27,23 @@ class Config:
     # JSON configuration - disable ASCII escaping for direct display of non-ASCII characters
     JSON_AS_ASCII = False
     
-    # LLM configuration (unified OpenAI format)
+    # LLM provider: 'anthropic' or 'openai'
+    LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'anthropic')
+
+    # LLM configuration
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
-    LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
-    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.anthropic.com/v1')
+    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'claude-haiku-4-5-20251001')
+
+    # Anthropic-specific configuration
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('LLM_API_KEY')
+    ANTHROPIC_BASE_URL = os.environ.get('ANTHROPIC_BASE_URL') or os.environ.get('LLM_BASE_URL', 'https://api.anthropic.com/v1')
+
+    # Model names for different roles
+    # Swarm agents (high volume, fast/cheap): Haiku 4.5
+    LLM_SWARM_MODEL = os.environ.get('LLM_SWARM_MODEL', 'claude-haiku-4-5-20251001')
+    # Orchestration and report generation: Sonnet 4.6
+    LLM_ORCHESTRATION_MODEL = os.environ.get('LLM_ORCHESTRATION_MODEL', 'claude-sonnet-4-6')
     
     # Zep configuration
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
@@ -67,8 +80,12 @@ class Config:
     def validate(cls):
         """Validate required configuration"""
         errors = []
-        if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY is not configured")
+        if cls.LLM_PROVIDER == 'anthropic':
+            if not cls.ANTHROPIC_API_KEY:
+                errors.append("ANTHROPIC_API_KEY is not configured (set ANTHROPIC_API_KEY or LLM_API_KEY)")
+        else:
+            if not cls.LLM_API_KEY:
+                errors.append("LLM_API_KEY is not configured")
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY is not configured")
         return errors

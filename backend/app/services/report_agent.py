@@ -816,7 +816,7 @@ REACT_INSUFFICIENT_TOOLS_MSG_ALT = (
 
 REACT_TOOL_LIMIT_MSG = (
     "工具调用次数已达上限（{tool_calls_count}/{max_tool_calls}），不能再调用工具。"
-    '请立即基于已获取's信息，以 "Final Answer:" 开头输出章节内容。'
+    '请立即基于已获取的信息，以 "Final Answer:" 开头输出章节内容。'
 )
 
 REACT_UNUSED_TOOLS_HINT = "\n💡 你还没有使用过: {unused_list}，建议尝试不同工具获取多角度信息"
@@ -902,7 +902,8 @@ class ReportAgent:
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
         
-        self.llm = llm_client or LLMClient()
+        # Report generation uses the orchestration model (more capable)
+        self.llm = llm_client or LLMClient(model=Config.LLM_ORCHESTRATION_MODEL)
         self.zep_tools = zep_tools or ZepToolsService()
         
         # 工具定义

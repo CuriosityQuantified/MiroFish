@@ -434,37 +434,65 @@ class RedditSimulationRunner:
     def _create_model(self):
         """
         创建LLM模型
-        
-        统一使用项目根目录 .env 文件in's配置（优先级最高）：
-        - LLM_API_KEY: API密钥
-        - LLM_BASE_URL: API基础URL
-        - LLM_MODEL_NAME: 模型名称
+
+        支持 Anthropic 和 OpenAI 两种后端：
+        - LLM_PROVIDER: 'anthropic' 或 'openai'（默认 anthropic）
+        - LLM_API_KEY / ANTHROPIC_API_KEY: API密钥
+        - LLM_BASE_URL / ANTHROPIC_BASE_URL / ANTHROPIC_API_BASE_URL: API基础URL
+        - LLM_MODEL_NAME / LLM_SWARM_MODEL: 模型名称
         """
-        # 优先从 .env 读取配置
-        llm_api_key = os.environ.get("LLM_API_KEY", "")
-        llm_base_url = os.environ.get("LLM_BASE_URL", "")
-        llm_model = os.environ.get("LLM_MODEL_NAME", "")
-        
-        # If .env in没有，则使用 config 作为备用
+        provider = os.environ.get("LLM_PROVIDER", "anthropic")
+        # Swarm agents use the swarm model (fast/cheap)
+        llm_model = os.environ.get("LLM_SWARM_MODEL", "") or os.environ.get("LLM_MODEL_NAME", "")
+
         if not llm_model:
-            llm_model = self.config.get("llm_model", "gpt-4o-mini")
-        
-        # Set camel-ai 所需's环境变量
-        if llm_api_key:
-            os.environ["OPENAI_API_KEY"] = llm_api_key
-        
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件in设置 LLM_API_KEY")
-        
-        if llm_base_url:
-            os.environ["OPENAI_API_BASE_URL"] = llm_base_url
-        
-        print(f"LLM配置: model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
-        
-        return ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
-            model_type=llm_model,
-        )
+            llm_model = self.config.get("llm_model", "claude-haiku-4-5-20251001" if provider == "anthropic" else "gpt-4o-mini")
+
+        if provider == "anthropic":
+            # Set ANTHROPIC_API_KEY for camel-ai
+            anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("LLM_API_KEY", "")
+            if anthropic_key:
+                os.environ["ANTHROPIC_API_KEY"] = anthropic_key
+
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise ValueError("缺少 API Key 配置，请设置 ANTHROPIC_API_KEY 或 LLM_API_KEY")
+
+            # Set base URL if provided (for cliproxy etc.)
+            anthropic_base_url = os.environ.get("ANTHROPIC_BASE_URL", "") or os.environ.get("ANTHROPIC_API_BASE_URL", "")
+            if not anthropic_base_url:
+                llm_base_url = os.environ.get("LLM_BASE_URL", "")
+                if llm_base_url and "anthropic" not in llm_base_url:
+                    # Custom base URL (e.g. cliproxy) - set for camel-ai
+                    anthropic_base_url = llm_base_url
+            if anthropic_base_url:
+                os.environ["ANTHROPIC_API_BASE_URL"] = anthropic_base_url
+
+            print(f"LLM配置 [Anthropic]: model={llm_model}, base_url={anthropic_base_url[:40] if anthropic_base_url else 'default'}...")
+
+            return ModelFactory.create(
+                model_platform=ModelPlatformType.ANTHROPIC,
+                model_type=llm_model,
+            )
+        else:
+            # OpenAI provider (legacy)
+            llm_api_key = os.environ.get("LLM_API_KEY", "")
+            llm_base_url = os.environ.get("LLM_BASE_URL", "")
+
+            if llm_api_key:
+                os.environ["OPENAI_API_KEY"] = llm_api_key
+
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
+
+            if llm_base_url:
+                os.environ["OPENAI_API_BASE_URL"] = llm_base_url
+
+            print(f"LLM配置 [OpenAI]: model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
+
+            return ModelFactory.create(
+                model_platform=ModelPlatformType.OPENAI,
+                model_type=llm_model,
+            )
     
     def _get_active_agents_for_round(
         self, 

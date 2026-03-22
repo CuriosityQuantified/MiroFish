@@ -16,8 +16,6 @@ from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
-from openai import OpenAI
-
 from ..config import Config
 from ..utils.logger import get_logger
 from .zep_entity_reader import EntityNode, ZepEntityReader
@@ -225,19 +223,42 @@ class SimulationConfigGenerator:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model_name: Optional[str] = None
+        model_name: Optional[str] = None,
+        provider: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+        self.provider = provider or Config.LLM_PROVIDER
+        # Use orchestration model for config generation (more capable)
+        self.model_name = model_name or Config.LLM_ORCHESTRATION_MODEL
+
+        if self.provider == 'anthropic':
+            self.api_key = api_key or Config.ANTHROPIC_API_KEY
+            self.base_url = base_url or Config.ANTHROPIC_BASE_URL
+        else:
+            self.api_key = api_key or Config.LLM_API_KEY
+            self.base_url = base_url or Config.LLM_BASE_URL
+
         if not self.api_key:
-            raise ValueError("LLM_API_KEY is not configured")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
+            raise ValueError("LLM API key is not configured (set LLM_API_KEY or ANTHROPIC_API_KEY)")
+
+        # Use native Anthropic SDK only for direct Anthropic API;
+        # for OpenAI-compatible proxies (e.g. cliproxy), use OpenAI SDK
+        self._use_anthropic_sdk = (
+            self.provider == 'anthropic'
+            and self.base_url
+            and 'anthropic.com' in self.base_url
         )
+
+        if self._use_anthropic_sdk:
+            import anthropic
+            self._anthropic_client = anthropic.Anthropic(api_key=self.api_key)
+            self.client = None
+        else:
+            from openai import OpenAI
+            self._anthropic_client = None
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
     
     def generate_config(
         self,
@@ -433,25 +454,42 @@ class SimulationConfigGenerator:
     def _call_llm_with_retry(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
         """LLM call with retry and JSON fix logic"""
         import re
-        
+
         max_attempts = 3
         last_error = None
-        
+
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次retry降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
-                
-                content = response.choices[0].message.content
-                finish_reason = response.choices[0].finish_reason
+                temperature = 0.7 - (attempt * 0.1)  # 每次retry降低温度
+
+                if self._use_anthropic_sdk:
+                    json_instruction = "\n\nIMPORTANT: You must respond with valid JSON only, no markdown formatting."
+                    response = self._anthropic_client.messages.create(
+                        model=self.model_name,
+                        system=system_prompt + json_instruction,
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=temperature,
+                        max_tokens=8192,
+                    )
+                    content = response.content[0].text
+                    finish_reason = response.stop_reason
+                    # Anthropic uses 'end_turn' for normal, 'max_tokens' for truncation
+                    if finish_reason == 'max_tokens':
+                        finish_reason = 'length'
+                else:
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=temperature,
+                    )
+                    content = response.choices[0].message.content
+                    finish_reason = response.choices[0].finish_reason
                 
                 # Check if truncated
                 if finish_reason == 'length':
