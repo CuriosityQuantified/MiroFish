@@ -1,6 +1,6 @@
 # MiroFish Development State
 
-_Last updated: 2026-03-22 12:00 PDT_
+_Last updated: 2026-03-22 13:10 PDT_
 
 ## Project Overview
 MiroFish is a multi-agent swarm intelligence simulation engine. We're converting it into a tool for OpenClaw and Claude Code (MCP server) with Anthropic LLM support and self-hosted dependencies.
@@ -55,11 +55,60 @@ MiroFish is a multi-agent swarm intelligence simulation engine. We're converting
 **Design doc:** `docs/phase3-headless-design.md`
 
 **Tasks for CC:**
-1. **Task 3a** — Fix remaining Chinese comments in scripts (run_parallel_simulation.py, run_twitter/reddit_simulation.py, action_logger.py, simulation.py API) — translation subagent running
-2. **Task 3b** — Create `backend/app/models/sim_config.py` — Pydantic `SimConfig` model + JSON schema export
-3. **Task 3c** — Create `backend/app/services/headless_runner.py` — `HeadlessRunner` class wrapping graph build + sim run + report in sequence
-4. **Task 3d** — Create `backend/mirofish_cli.py` — argparse CLI with `run`, `build`, `report`, `status` subcommands
-5. **Task 3e** — Ensure `report_agent.py` writes `report.md` to sim output dir
+1. **Task 3a** ✅ DONE — Translation commit `e305230` covers scripts + simulation.py API
+2. **Task 3b** ✅ DONE — `backend/app/models/sim_config.py` + `backend/mirofish-config.schema.json` committed `293e751` (Hal committed, CC authored)
+3. **Task 3c** 🔜 NEXT — Create `backend/app/services/headless_runner.py` — see spec below
+4. **Task 3d** 🔜 — Create `backend/mirofish_cli.py` — argparse CLI (can do after 3c)
+5. **Task 3e** 🔜 — Ensure `report_agent.py` writes `report.md` to `{sim_dir}/report.md`
+
+### Task 3c Spec — `HeadlessRunner` (for CC)
+
+**File:** `backend/app/services/headless_runner.py`
+
+Key observations from the existing service layer:
+- `GraphBuilderService.build_graph_async()` takes `text` + `ontology` dict and returns a `task_id`; the sync path needs to poll `task_manager.get_task(task_id)` until done, or we use a simpler direct Graphiti call
+- `SimulationRunner.start_simulation()` is a classmethod; takes `simulation_id`, `platform`, `max_rounds`, `enable_graph_memory_update`, `graph_id` — simulation config must be pre-written to `{RUN_STATE_DIR}/{sim_id}/simulation_config.json`
+- `ReportAgent` constructor takes `simulation_id` + `graph_id` + requirement string; `generate_report()` writes sections to `data/uploads/reports/{report_id}/` — we need to also copy/symlink `full_report.md` to `{sim_dir}/report.md`
+- `SimulationRunner.RUN_STATE_DIR` controls where state lives (check `Config` for value)
+- `simulation_runner.py` still has Chinese comments in `start_simulation()` — not a blocker but worth noting
+
+```python
+# headless_runner.py skeleton
+class HeadlessRunner:
+    def run(self, config: SimConfig) -> SimResult:
+        # 1. Build knowledge graph from documents (if documents provided)
+        # 2. Prepare simulation config JSON at RUN_STATE_DIR/{sim_id}/simulation_config.json
+        # 3. Call SimulationRunner.start_simulation() and poll until complete
+        # 4. Optionally generate report → copy to {sim_dir}/report.md
+        # 5. Return SimResult with counts + paths
+```
+
+**Important:** `SimulationRunner` is subprocess-based (spawns scripts). `HeadlessRunner.run()` should:
+- Poll `get_run_state()` in a loop with `time.sleep(5)` until `runner_status` is COMPLETED/FAILED
+- Set a reasonable timeout (default 30 min)
+- Return `SimResult` with `status="failed"` + error if timeout/failure
+
+### Task 3d Spec — `mirofish_cli.py` (for CC, after 3c)
+
+**File:** `backend/mirofish_cli.py`
+
+```python
+# Subcommands:
+# run    --config FILE [--output DIR]
+# build  --documents FILE [FILE ...] [--graph-id NAME]
+# report --sim-dir DIR [--graph-id ID]
+# status --sim-dir DIR
+```
+
+Add entry point to `pyproject.toml`:
+```toml
+[project.scripts]
+mirofish = "mirofish_cli:main"
+```
+
+### Task 3e Spec — `report.md` output (for CC, with 3d or standalone)
+
+In `ReportAgent.generate_report()`, after writing `full_report.md` to the reports folder, also write a copy to `{sim_dir}/report.md`. Check where `ReportManager._ensure_report_folder` resolves to and add the copy step near the end of `generate_report()`.
 
 **Acceptance criteria:**
 - `python backend/mirofish_cli.py run --config test_config.json` runs without Flask
