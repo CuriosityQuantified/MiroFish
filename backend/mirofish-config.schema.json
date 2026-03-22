@@ -1,0 +1,61 @@
+{
+  "description": "Configuration for a headless simulation run.",
+  "properties": {
+    "graph_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Graph Id"
+    },
+    "documents": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Documents",
+      "type": "array"
+    },
+    "platform": {
+      "default": "both",
+      "enum": [
+        "twitter",
+        "reddit",
+        "both"
+      ],
+      "title": "Platform",
+      "type": "string"
+    },
+    "max_rounds": {
+      "default": 10,
+      "title": "Max Rounds",
+      "type": "integer"
+    },
+    "num_agents": {
+      "default": 10,
+      "title": "Num Agents",
+      "type": "integer"
+    },
+    "seed_topic": {
+      "default": "",
+      "title": "Seed Topic",
+      "type": "string"
+    },
+    "output_dir": {
+      "default": "data/sim_output",
+      "title": "Output Dir",
+      "type": "string"
+    },
+    "report": {
+      "default": true,
+      "title": "Report",
+      "type": "boolean"
+    }
+  },
+  "title": "SimConfig",
+  "type": "object"
+}
