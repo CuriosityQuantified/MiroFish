@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "mirofish"
+version = "0.1.0"
+description = "MiroFish — multi-agent swarm intelligence simulation engine"
+requires-python = ">=3.10"
+
+[project.scripts]
+mirofish = "backend.mirofish_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
