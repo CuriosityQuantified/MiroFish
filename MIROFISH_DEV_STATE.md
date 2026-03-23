@@ -1,6 +1,6 @@
 # MiroFish Development State
 
-_Last updated: 2026-03-22 16:57 PDT_
+_Last updated: 2026-03-22 17:57 PDT_
 
 ## Project Overview
 MiroFish is a multi-agent swarm intelligence simulation engine. We're converting it into a tool for OpenClaw and Claude Code (MCP server) with Anthropic LLM support and self-hosted dependencies.
@@ -183,6 +183,29 @@ All 5 tasks delivered. Phase 3 acceptance criteria:
 - Config files (.env.example, Dockerfile, docker-compose.yml)
 - Some Chinese LLM system prompts intentionally preserved (functional for Chinese NLP pipeline)
 - **Missed:** simulation scripts (run_parallel_simulation.py etc.) — being fixed in cleanup
+
+### Phase 4 Cleanup (Hal, 2026-03-22 ~18:00 PDT)
+- `mcp[cli]>=1.0.0` added to `backend/requirements.txt` (was missing) — commit `818a95c`
+- `mirofish-mcp` entry point added to `pyproject.toml` — commit `818a95c`
+
+### Phase 5: Integration Testing + End-to-End Validation 🔜 NEXT
+**Status:** Not started
+**Goal:** Confirm all 4 phases actually work together in a real environment
+**Owner:** CC (implementation) + Hal (review/design)
+
+**Tasks:**
+1. **Task 5a** — `tests/test_mcp_smoke.py` — smoke tests for each MCP tool (mock HeadlessRunner, verify tool signatures work, no import errors)
+2. **Task 5b** — `tests/test_sim_config.py` — pydantic validation tests for SimConfig edge cases
+3. **Task 5c** — `tests/test_cli.py` — CLI subcommand smoke tests (`mirofish run --help`, `mirofish status`, etc.)
+4. **Task 5d** — `tests/test_knowledge_graph.py` — Graphiti + Kuzu integration smoke test (create graph, add episode, search, delete)
+5. **Task 5e** — CI workflow `.github/workflows/test.yml` — run tests on push (Python 3.11, install deps, pytest)
+6. **Task 5f** — `README.md` full rewrite — remove outdated Chinese-era instructions, document Anthropic setup, headless CLI, MCP server, and Graphiti graph (replace the existing README)
+
+**Design notes:**
+- Tests should use `pytest` + `unittest.mock` — no live API calls
+- Kuzu tests can use a temp dir fixture (`tmp_path`)
+- CI should cache pip deps (`actions/cache`)
+- README should have: quickstart (5 steps), architecture diagram (ASCII), tool reference
 
 ## Decisions Made
 - **Graphiti + Kuzu over Zep Cloud** — self-hosted, embedded, no external API keys
