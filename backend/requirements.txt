@@ -31,6 +31,10 @@ PyMuPDF>=1.24.0
 charset-normalizer>=3.0.0
 chardet>=5.0.0
 
+# ============= MCP Server =============
+# FastMCP — MCP tool server (Phase 4)
+mcp[cli]>=1.0.0
+
 # ============= Utilities =============
 # Environment variable loading
 python-dotenv>=1.0.0

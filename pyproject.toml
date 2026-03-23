@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 
 [project.scripts]
 mirofish = "backend.mirofish_cli:main"
+mirofish-mcp = "backend.mirofish_mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
