@@ -348,7 +348,7 @@ Based on the above content, design entity types and relationship types suitable 
         Convert ontology definition to Python code (like ontology.py)
         
         Args:
-            ontology: 本体定义
+            ontology: Ontology definition
             
         Returns:
             Python code string
@@ -397,7 +397,7 @@ Based on the above content, design entity types and relationship types suitable 
             code_lines.append('')
             code_lines.append('')
         
-        code_lines.append('# ============== 关系类型定义 ==============')
+        code_lines.append('# ============== Relationship Type Definitions ==============')
         code_lines.append('')
         
         # Generate relationship types
@@ -426,7 +426,7 @@ Based on the above content, design entity types and relationship types suitable 
             code_lines.append('')
         
         # Generate type dictionaries
-        code_lines.append('# ============== 类型配置 ==============')
+        code_lines.append('# ============== Type Configuration ==============')
         code_lines.append('')
         code_lines.append('ENTITY_TYPES = {')
         for entity in ontology.get("entity_types", []):

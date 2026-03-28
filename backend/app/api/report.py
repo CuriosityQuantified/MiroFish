@@ -618,7 +618,7 @@ def get_report_sections(report_id: str):
                     {
                         "filename": "section_01.md",
                         "section_index": 1,
-                        "content": "## Execute摘要\\n\\n..."
+                        "content": "## Executive Summary\\n\\n..."
                     },
                     ...
                 ],
@@ -663,7 +663,7 @@ def get_single_section(report_id: str, section_index: int):
             "success": true,
             "data": {
                 "filename": "section_01.md",
-                "content": "## Execute摘要\\n\\n..."
+                "content": "## Executive Summary\\n\\n..."
             }
         }
     """
@@ -862,8 +862,8 @@ def get_console_log(report_id: str):
             "success": true,
             "data": {
                 "logs": [
-                    "[19:46:14] INFO: Search完成: 找到 15 条相关事实",
-                    "[19:46:14] INFO: 图谱Search: graph_id=xxx, query=...",
+                    "[19:46:14] INFO: Search complete: found 15 relevant facts",
+                    "[19:46:14] INFO: Graph search: graph_id=xxx, query=...",
                     ...
                 ],
                 "total_lines": 100,

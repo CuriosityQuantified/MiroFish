@@ -486,7 +486,7 @@ def build_graph():
                 )
                 
             except Exception as e:
-                # Update project status为Failed
+                # Update project status to Failed
                 build_logger.error(f"[{task_id}] Graph building failed: {str(e)}")
                 build_logger.debug(traceback.format_exc())
                 
