@@ -50,6 +50,103 @@ else:
 import re
 
 
+# ---------------------------------------------------------------------------
+# Action logging helper — writes DB trace rows → twitter/actions.jsonl
+# so SimulationRunner can monitor progress and count rounds.
+# ---------------------------------------------------------------------------
+
+def _flush_actions_to_jsonl(
+    db_path: str,
+    actions_jsonl_path: str,
+    round_num: int,
+    simulated_hour: int,
+    agent_name_map: dict,
+    last_rowid: int,
+    platform: str = "twitter",
+    minutes_per_round: int = 30,
+    total_rounds: int = 0,
+) -> int:
+    """
+    Read new rows from the OASIS SQLite trace table and append them to
+    actions.jsonl in the format SimulationRunner._read_action_log() expects.
+
+    Also writes round_end and simulation_end event entries.
+
+    Returns the new last_rowid to pass on the next call.
+    """
+    import sqlite3 as _sqlite3
+
+    if not os.path.exists(db_path):
+        return last_rowid
+
+    conn = _sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        # Fetch new trace rows since last call (rowid > last_rowid)
+        cursor.execute(
+            "SELECT rowid, user_id, action, info, created_at FROM trace "
+            "WHERE action != 'sign_up' AND rowid > ? ORDER BY rowid",
+            (last_rowid,)
+        )
+        rows = cursor.fetchall()
+        new_last_rowid = last_rowid
+
+        with open(actions_jsonl_path, "a", encoding="utf-8") as fh:
+            for rowid, user_id, action, info_raw, created_at in rows:
+                new_last_rowid = max(new_last_rowid, rowid)
+                try:
+                    info = json.loads(info_raw) if info_raw else {}
+                except Exception:
+                    info = {}
+
+                agent_name = agent_name_map.get(user_id, f"agent_{user_id}")
+                entry = {
+                    "round": round_num,
+                    "timestamp": datetime.now().isoformat(),
+                    "platform": platform,
+                    "agent_id": user_id,
+                    "agent_name": agent_name,
+                    "action_type": action.upper(),
+                    "action_args": info,
+                    "result": None,
+                    "success": True,
+                }
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        # Write round_end event
+        simulated_hours = (round_num * minutes_per_round) // 60
+        with open(actions_jsonl_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "event_type": "round_end",
+                "round": round_num + 1,
+                "simulated_hours": simulated_hours,
+                "timestamp": datetime.now().isoformat(),
+            }, ensure_ascii=False) + "\n")
+
+        return new_last_rowid
+    except Exception as e:
+        raise
+    finally:
+        conn.close()
+
+
+def _write_simulation_end_event(
+    actions_jsonl_path: str,
+    total_rounds: int,
+    total_actions: int,
+    platform: str = "twitter",
+) -> None:
+    """Write the simulation_end event that SimulationRunner uses to mark completion."""
+    with open(actions_jsonl_path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "event_type": "simulation_end",
+            "platform": platform,
+            "total_rounds": total_rounds,
+            "total_actions": total_actions,
+            "timestamp": datetime.now().isoformat(),
+        }, ensure_ascii=False) + "\n")
+
+
 class UnicodeFormatter(logging.Formatter):
     """Custom formatter that converts Unicode escape sequences to readable characters"""
     
@@ -609,6 +706,12 @@ class TwitterSimulationRunner:
         if os.path.exists(db_path):
             os.remove(db_path)
             print(f"Deleted old database: {db_path}")
+
+        # Action log setup — SimulationRunner monitors twitter/actions.jsonl
+        twitter_log_dir = os.path.join(self.simulation_dir, "twitter")
+        os.makedirs(twitter_log_dir, exist_ok=True)
+        actions_jsonl_path = os.path.join(twitter_log_dir, "actions.jsonl")
+        _last_trace_rowid = 0  # track highest rowid we've already written
         
         # Create environment
         print("Creating OASIS environment...")
@@ -621,6 +724,18 @@ class TwitterSimulationRunner:
         
         await self.env.reset()
         print("Environment initialization complete\n")
+
+        # Build agent_id → name map from agent_graph for action logging
+        _agent_name_map: dict = {}
+        try:
+            for agent_id, agent in self.agent_graph.get_agents():
+                profile = getattr(agent, 'user_info', None) or {}
+                name = (getattr(profile, 'name', None)
+                        or (profile.get('name') if isinstance(profile, dict) else None)
+                        or f"agent_{agent_id}")
+                _agent_name_map[agent_id] = str(name)
+        except Exception:
+            pass  # best-effort; monitor will still see DO_NOTHING entries
         
         # Initialize IPC handler
         self.ipc_handler = IPCHandler(self.simulation_dir, self.env, self.agent_graph)
@@ -649,6 +764,22 @@ class TwitterSimulationRunner:
                 await self.env.step(initial_actions)
                 print(f"  Published {len(initial_actions)} initial posts")
         
+        # Flush initial posts to actions.jsonl (they're already in DB before the loop)
+        try:
+            _last_trace_rowid = _flush_actions_to_jsonl(
+                db_path=db_path,
+                actions_jsonl_path=actions_jsonl_path,
+                round_num=-1,  # pre-round marker
+                simulated_hour=0,
+                agent_name_map=_agent_name_map,
+                last_rowid=_last_trace_rowid,
+                platform="twitter",
+                minutes_per_round=minutes_per_round,
+                total_rounds=total_rounds,
+            )
+        except Exception as _init_err:
+            print(f"  [action log] Warning flushing initial posts: {_init_err}")
+
         # Main simulation loop
         print("\nStarting simulation loop...")
         start_time = datetime.now()
@@ -665,6 +796,19 @@ class TwitterSimulationRunner:
             )
             
             if not active_agents:
+                # Still write a round_end marker so the monitor advances
+                try:
+                    simulated_hours_val = (round_num * minutes_per_round) // 60
+                    with open(actions_jsonl_path, "a", encoding="utf-8") as _fh:
+                        import json as _json
+                        _fh.write(_json.dumps({
+                            "event_type": "round_end",
+                            "round": round_num + 1,
+                            "simulated_hours": simulated_hours_val,
+                            "timestamp": datetime.now().isoformat(),
+                        }, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
                 continue
             
             # Build actions
@@ -675,7 +819,23 @@ class TwitterSimulationRunner:
             
             # Execute actions
             await self.env.step(actions)
-            
+
+            # Flush new DB trace entries → twitter/actions.jsonl
+            try:
+                _last_trace_rowid = _flush_actions_to_jsonl(
+                    db_path=db_path,
+                    actions_jsonl_path=actions_jsonl_path,
+                    round_num=round_num,
+                    simulated_hour=simulated_hour,
+                    agent_name_map=_agent_name_map,
+                    last_rowid=_last_trace_rowid,
+                    platform="twitter",
+                    minutes_per_round=minutes_per_round,
+                    total_rounds=total_rounds,
+                )
+            except Exception as _log_err:
+                print(f"  [action log] Warning: {_log_err}")
+
             # Print progress
             if (round_num + 1) % 10 == 0 or round_num == 0:
                 elapsed = (datetime.now() - start_time).total_seconds()
@@ -689,7 +849,19 @@ class TwitterSimulationRunner:
         print(f"\nSimulation loop completed!")
         print(f"  - Total duration: {total_elapsed:.1f}s")
         print(f"  - Database: {db_path}")
-        
+
+        # Write simulation_end event so SimulationRunner marks this platform complete
+        try:
+            _write_simulation_end_event(
+                actions_jsonl_path=actions_jsonl_path,
+                total_rounds=total_rounds,
+                total_actions=_last_trace_rowid,
+                platform="twitter",
+            )
+            print(f"  - Action log: {actions_jsonl_path}")
+        except Exception as _end_err:
+            print(f"  [action log] Warning writing simulation_end: {_end_err}")
+
         # Whether to enter command-waiting mode
         if self.wait_for_commands:
             print("\n" + "=" * 60)

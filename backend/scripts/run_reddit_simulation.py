@@ -50,6 +50,78 @@ else:
 import re
 
 
+# ---------------------------------------------------------------------------
+# Action logging helper (same pattern as run_twitter_simulation.py)
+# ---------------------------------------------------------------------------
+
+def _flush_actions_to_jsonl(
+    db_path: str,
+    actions_jsonl_path: str,
+    round_num: int,
+    simulated_hour: int,
+    agent_name_map: dict,
+    last_rowid: int,
+    platform: str = "reddit",
+    minutes_per_round: int = 30,
+    total_rounds: int = 0,
+) -> int:
+    import sqlite3 as _sqlite3
+    if not os.path.exists(db_path):
+        return last_rowid
+    conn = _sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT rowid, user_id, action, info, created_at FROM trace "
+            "WHERE action != 'sign_up' AND rowid > ? ORDER BY rowid",
+            (last_rowid,)
+        )
+        rows = cursor.fetchall()
+        new_last_rowid = last_rowid
+        with open(actions_jsonl_path, "a", encoding="utf-8") as fh:
+            for rowid, user_id, action, info_raw, created_at in rows:
+                new_last_rowid = max(new_last_rowid, rowid)
+                try:
+                    info = json.loads(info_raw) if info_raw else {}
+                except Exception:
+                    info = {}
+                agent_name = agent_name_map.get(user_id, f"agent_{user_id}")
+                entry = {
+                    "round": round_num,
+                    "timestamp": datetime.now().isoformat(),
+                    "platform": platform,
+                    "agent_id": user_id,
+                    "agent_name": agent_name,
+                    "action_type": action.upper(),
+                    "action_args": info,
+                    "result": None,
+                    "success": True,
+                }
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        simulated_hours = (round_num * minutes_per_round) // 60
+        with open(actions_jsonl_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "event_type": "round_end",
+                "round": round_num + 1,
+                "simulated_hours": simulated_hours,
+                "timestamp": datetime.now().isoformat(),
+            }, ensure_ascii=False) + "\n")
+        return new_last_rowid
+    finally:
+        conn.close()
+
+
+def _write_simulation_end_event(actions_jsonl_path, total_rounds, total_actions, platform="reddit"):
+    with open(actions_jsonl_path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "event_type": "simulation_end",
+            "platform": platform,
+            "total_rounds": total_rounds,
+            "total_actions": total_actions,
+            "timestamp": datetime.now().isoformat(),
+        }, ensure_ascii=False) + "\n")
+
+
 class UnicodeFormatter(logging.Formatter):
     """Custom formatter that converts Unicode escape sequences to readable characters"""
     
@@ -600,7 +672,13 @@ class RedditSimulationRunner:
         if os.path.exists(db_path):
             os.remove(db_path)
             print(f"Deleted old database: {db_path}")
-        
+
+        # Action log setup
+        reddit_log_dir = os.path.join(self.simulation_dir, "reddit")
+        os.makedirs(reddit_log_dir, exist_ok=True)
+        actions_jsonl_path = os.path.join(reddit_log_dir, "actions.jsonl")
+        _last_trace_rowid = 0
+
         print("Creating OASIS environment...")
         self.env = oasis.make(
             agent_graph=self.agent_graph,
@@ -611,7 +689,19 @@ class RedditSimulationRunner:
         
         await self.env.reset()
         print("Environment initialization complete\n")
-        
+
+        # Build agent_id → name map
+        _agent_name_map: dict = {}
+        try:
+            for agent_id, agent in self.agent_graph.get_agents():
+                profile = getattr(agent, 'user_info', None) or {}
+                name = (getattr(profile, 'name', None)
+                        or (profile.get('name') if isinstance(profile, dict) else None)
+                        or f"agent_{agent_id}")
+                _agent_name_map[agent_id] = str(name)
+        except Exception:
+            pass
+
         # Initialize IPC handler
         self.ipc_handler = IPCHandler(self.simulation_dir, self.env, self.agent_graph)
         self.ipc_handler.update_status("running")
@@ -647,6 +737,22 @@ class RedditSimulationRunner:
                 await self.env.step(initial_actions)
                 print(f"  Published {len(initial_actions)} initial posts")
         
+        # Flush initial posts to reddit/actions.jsonl
+        try:
+            _last_trace_rowid = _flush_actions_to_jsonl(
+                db_path=db_path,
+                actions_jsonl_path=actions_jsonl_path,
+                round_num=-1,
+                simulated_hour=0,
+                agent_name_map=_agent_name_map,
+                last_rowid=_last_trace_rowid,
+                platform="reddit",
+                minutes_per_round=minutes_per_round,
+                total_rounds=total_rounds,
+            )
+        except Exception as _init_err:
+            print(f"  [action log] Warning flushing initial posts: {_init_err}")
+
         # Main simulation loop
         print("\nStarting simulation loop...")
         start_time = datetime.now()
@@ -661,6 +767,18 @@ class RedditSimulationRunner:
             )
             
             if not active_agents:
+                try:
+                    simulated_hours_val = (round_num * minutes_per_round) // 60
+                    with open(actions_jsonl_path, "a", encoding="utf-8") as _fh:
+                        import json as _json
+                        _fh.write(_json.dumps({
+                            "event_type": "round_end",
+                            "round": round_num + 1,
+                            "simulated_hours": simulated_hours_val,
+                            "timestamp": datetime.now().isoformat(),
+                        }, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
                 continue
             
             actions = {
@@ -669,7 +787,22 @@ class RedditSimulationRunner:
             }
             
             await self.env.step(actions)
-            
+
+            try:
+                _last_trace_rowid = _flush_actions_to_jsonl(
+                    db_path=db_path,
+                    actions_jsonl_path=actions_jsonl_path,
+                    round_num=round_num,
+                    simulated_hour=simulated_hour,
+                    agent_name_map=_agent_name_map,
+                    last_rowid=_last_trace_rowid,
+                    platform="reddit",
+                    minutes_per_round=minutes_per_round,
+                    total_rounds=total_rounds,
+                )
+            except Exception as _log_err:
+                print(f"  [action log] Warning: {_log_err}")
+
             if (round_num + 1) % 10 == 0 or round_num == 0:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 progress = (round_num + 1) / total_rounds * 100
@@ -682,7 +815,17 @@ class RedditSimulationRunner:
         print(f"\nSimulation loop completed!")
         print(f"  - Total duration: {total_elapsed:.1f}s")
         print(f"  - Database: {db_path}")
-        
+
+        try:
+            _write_simulation_end_event(
+                actions_jsonl_path=actions_jsonl_path,
+                total_rounds=total_rounds,
+                total_actions=_last_trace_rowid,
+                platform="reddit",
+            )
+        except Exception as _end_err:
+            print(f"  [action log] Warning: {_end_err}")
+
         # Whether to enter command-waiting mode
         if self.wait_for_commands:
             print("\n" + "=" * 60)
