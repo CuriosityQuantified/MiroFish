@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from ..config import Config
 from ..utils.logger import get_logger
 from . import knowledge_graph as kg
+from .ontology_labeler import merge_labels_into_nodes
 
 logger = get_logger('mirofish.entity_reader')
 
@@ -94,7 +95,10 @@ class ZepEntityReader:
         """
         logger.info(f"Getting all nodes from graph {graph_id}...")
         nodes = kg.get_all_nodes(graph_id)
-        logger.info(f"Got {len(nodes)} nodes total")
+        # Merge sidecar ontology labels (assigned by ontology_labeler after graph build)
+        nodes = merge_labels_into_nodes(nodes, graph_id)
+        labelled = sum(1 for n in nodes if any(l not in ("Entity", "Node") for l in n.get("labels", [])))
+        logger.info(f"Got {len(nodes)} nodes total ({labelled} with ontology labels)")
         return nodes
 
     def get_all_edges(self, graph_id: str) -> List[Dict[str, Any]]:

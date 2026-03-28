@@ -441,13 +441,33 @@ def build_graph():
                     progress=95
                 )
                 graph_data = builder.get_graph_data(graph_id)
-                
+                node_count = graph_data.get("node_count", 0)
+                edge_count = graph_data.get("edge_count", 0)
+
+                # Post-process: classify nodes against ontology and persist labels
+                entity_types = ontology.get("entity_types", []) if ontology else []
+                if entity_types and node_count > 0:
+                    task_manager.update_task(
+                        task_id,
+                        message=f"Classifying {node_count} nodes against ontology ({len(entity_types)} types)...",
+                        progress=96
+                    )
+                    try:
+                        from ..services.ontology_labeler import label_graph_nodes
+                        labels = label_graph_nodes(
+                            graph_id=graph_id,
+                            entity_types=entity_types,
+                            force=True,
+                        )
+                        labelled = sum(1 for v in labels.values() if any(l not in ("Entity", "Node") for l in v))
+                        build_logger.info(f"[{task_id}] Ontology labelling: {labelled}/{node_count} nodes assigned types")
+                    except Exception as label_exc:
+                        build_logger.warning(f"[{task_id}] Ontology labelling failed (non-fatal): {label_exc}")
+
                 # Update project status
                 project.status = ProjectStatus.GRAPH_COMPLETED
                 ProjectManager.save_project(project)
                 
-                node_count = graph_data.get("node_count", 0)
-                edge_count = graph_data.get("edge_count", 0)
                 build_logger.info(f"[{task_id}] Graph building complete: graph_id={graph_id}, nodes={node_count}, edges={edge_count}")
                 
                 # Complete
@@ -535,6 +555,70 @@ def list_tasks():
         "data": [t.to_dict() for t in tasks],
         "count": len(tasks)
     })
+
+
+# ============== Ontology Label API ==============
+
+@graph_bp.route('/label/<graph_id>', methods=['POST'])
+def label_graph(graph_id: str):
+    """
+    Classify graph nodes against an ontology and persist labels.
+
+    Useful for triggering labelling on an existing graph without rebuilding.
+
+    Request (JSON):
+        {
+            "entity_types": [{"name": "...", "description": "..."}, ...],  // Required
+            "force": false  // Optional, re-label even if sidecar exists
+        }
+
+    Response:
+        {
+            "success": true,
+            "data": {
+                "graph_id": "...",
+                "total_nodes": 20,
+                "labelled_nodes": 15,
+                "labels": {"uuid": ["TypeName", "Entity"], ...}
+            }
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        entity_types = data.get("entity_types", [])
+        force = data.get("force", False)
+
+        if not entity_types:
+            return jsonify({"success": False, "error": "entity_types is required"}), 400
+
+        from ..services.ontology_labeler import label_graph_nodes
+        from ..services import knowledge_graph as kg
+
+        nodes = kg.get_all_nodes(graph_id)
+        if not nodes:
+            return jsonify({"success": False, "error": f"No nodes found for graph {graph_id}"}), 404
+
+        labels = label_graph_nodes(
+            graph_id=graph_id,
+            entity_types=entity_types,
+            nodes=nodes,
+            force=force,
+        )
+
+        labelled = sum(1 for v in labels.values() if any(l not in ("Entity", "Node") for l in v))
+        return jsonify({
+            "success": True,
+            "data": {
+                "graph_id": graph_id,
+                "total_nodes": len(nodes),
+                "labelled_nodes": labelled,
+                "labels": labels,
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Label graph failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ============== Graph Data API ==============

@@ -151,6 +151,36 @@ class GraphBuilderService:
             # 6. Get graph info
             graph_info = self._get_graph_info(graph_id)
 
+            # 7. Post-process: assign ontology labels to nodes
+            entity_types = ontology.get("entity_types", []) if ontology else []
+            if entity_types:
+                self.task_manager.update_task(
+                    task_id,
+                    progress=90,
+                    message=f"Classifying {graph_info.node_count} nodes against ontology..."
+                )
+                try:
+                    from .ontology_labeler import label_graph_nodes
+                    label_graph_nodes(
+                        graph_id=graph_id,
+                        entity_types=entity_types,
+                        force=True,
+                    )
+                    self.task_manager.update_task(
+                        task_id,
+                        progress=97,
+                        message="Ontology labels assigned"
+                    )
+                except Exception as label_exc:
+                    # Non-fatal: log and continue, simulation prepare will surface the issue
+                    import traceback
+                    logger.warning(
+                        f"Ontology labelling failed (non-fatal): {label_exc}\n"
+                        f"{traceback.format_exc()}"
+                    )
+            else:
+                logger.info("No entity_types in ontology — skipping node labelling")
+
             # Complete
             self.task_manager.complete_task(task_id, {
                 "graph_id": graph_id,
