@@ -90,6 +90,55 @@ def _run_async(coro):
         return loop.run_until_complete(coro)
 
 
+def _define_patched_kuzu_driver():
+    """Define and return PatchedKuzuDriver (deferred to avoid top-level import)."""
+    from graphiti_core.driver.kuzu_driver import KuzuDriver
+
+    class PatchedKuzuDriver(KuzuDriver):
+        """
+        KuzuDriver subclass fixing graphiti-core 0.28.2 Kuzu driver bugs.
+
+        Remove when graphiti-core > 0.28.2 ships fixes for:
+        - KuzuDriver.__init__ not setting _database (used by Graphiti.add_episode)
+        - build_indices_and_constraints() being a no-op (FTS indices never created)
+        """
+
+        def __init__(self, db: str = ':memory:', max_concurrent_queries: int = 1):
+            super().__init__(db=db, max_concurrent_queries=max_concurrent_queries)
+            # Bug #1: Base GraphDriver declares _database but KuzuDriver never sets it.
+            # Graphiti.add_episode() reads driver._database for group_id comparison.
+            if not hasattr(self, '_database'):
+                self._database = ''
+
+        async def build_indices_and_constraints(self, delete_existing: bool = False):
+            """Create FTS indices that KuzuDriver's no-op method skips."""
+            await super().build_indices_and_constraints(delete_existing=delete_existing)
+            import kuzu as _kuzu
+            _conn = _kuzu.Connection(self.db)
+            for stmt in [
+                "CALL CREATE_FTS_INDEX('Episodic', 'episode_content', ['content', 'source', 'source_description']);",
+                "CALL CREATE_FTS_INDEX('Entity', 'node_name_and_summary', ['name', 'summary']);",
+                "CALL CREATE_FTS_INDEX('Community', 'community_name', ['name']);",
+                "CALL CREATE_FTS_INDEX('RelatesToNode_', 'edge_name_and_fact', ['name', 'fact']);",
+            ]:
+                try:
+                    _conn.execute(stmt)
+                except RuntimeError as e:
+                    if 'already exists' not in str(e):
+                        logger.warning(f"FTS index creation warning: {e}")
+            _conn.close()
+
+    # Version guard: warn if graphiti-core has been upgraded past the patched version.
+    import graphiti_core as _gc
+    if hasattr(_gc, '__version__') and _gc.__version__ > '0.28.2':
+        logger.warning(
+            f"graphiti-core {_gc.__version__} detected (patches target 0.28.2). "
+            "Test PatchedKuzuDriver — upstream may have fixed these issues."
+        )
+
+    return PatchedKuzuDriver
+
+
 def get_graphiti():
     """Return the process-wide Graphiti instance, creating it on first call."""
     global _graphiti_instance
@@ -101,10 +150,11 @@ def get_graphiti():
             return _graphiti_instance
 
         from graphiti_core import Graphiti
-        from graphiti_core.driver.kuzu_driver import KuzuDriver
         from graphiti_core.llm_client.anthropic_client import AnthropicClient
         from graphiti_core.llm_client.config import LLMConfig
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
+
+        PatchedKuzuDriver = _define_patched_kuzu_driver()
 
         db_path = _get_db_path()
         # Ensure parent directory exists (Kuzu creates the DB file/dir itself)
@@ -114,23 +164,30 @@ def get_graphiti():
             os.rmdir(db_path)
         logger.info(f"Initializing Kuzu graph database at {db_path}")
 
-        kuzu_driver = KuzuDriver(db=db_path)
+        kuzu_driver = PatchedKuzuDriver(db=db_path)
 
         # --- LLM client (Anthropic via proxy or direct) ---
         anthropic_api_key = Config.ANTHROPIC_API_KEY or os.getenv('ANTHROPIC_API_KEY', '')
         anthropic_base_url = Config.ANTHROPIC_BASE_URL or os.getenv('ANTHROPIC_BASE_URL')
         llm_model = Config.LLM_ORCHESTRATION_MODEL or 'claude-haiku-4-5-20251001'
 
+        # The native Anthropic SDK adds /v1 itself, so strip trailing /v1 from
+        # proxy URLs to avoid double-pathing (e.g. http://host:8317/v1/v1/messages).
+        # The .env keeps /v1 because other code paths use the OpenAI SDK which needs it.
+        anthropic_sdk_base_url = anthropic_base_url
+        if anthropic_sdk_base_url and anthropic_sdk_base_url.rstrip('/').endswith('/v1'):
+            anthropic_sdk_base_url = anthropic_sdk_base_url.rstrip('/')[:-3].rstrip('/')
+
         llm_config = LLMConfig(
             api_key=anthropic_api_key,
             model=llm_model,
-            base_url=anthropic_base_url if anthropic_base_url else None,
+            base_url=anthropic_sdk_base_url if anthropic_sdk_base_url else None,
         )
 
         from anthropic import AsyncAnthropic
         anthropic_client_kwargs: Dict[str, Any] = {'api_key': anthropic_api_key, 'max_retries': 2}
-        if anthropic_base_url:
-            anthropic_client_kwargs['base_url'] = anthropic_base_url
+        if anthropic_sdk_base_url:
+            anthropic_client_kwargs['base_url'] = anthropic_sdk_base_url
         async_anthropic = AsyncAnthropic(**anthropic_client_kwargs)
 
         llm_client = AnthropicClient(config=llm_config, client=async_anthropic)
@@ -157,11 +214,12 @@ def get_graphiti():
 
             class NoOpEmbedder(EmbedderClient):
                 """Embedder stub that returns zero vectors when no embedding API is available."""
-                async def create(self, input_data):
-                    # Return zero vectors matching Graphiti's expected embedding dimension (1536)
-                    if isinstance(input_data, list):
-                        return [[0.0] * 1536 for _ in input_data]
-                    return [[0.0] * 1536]
+                async def create(self, input_data) -> list[float]:
+                    # create() must return a single flat vector (list[float])
+                    return [0.0] * 1536
+
+                async def create_batch(self, input_data_list) -> list[list[float]]:
+                    return [[0.0] * 1536 for _ in input_data_list]
 
             embedder = NoOpEmbedder()
             logger.warning(
@@ -189,7 +247,8 @@ def get_graphiti():
             store_raw_episode_content=True,
         )
 
-        # Build indices (idempotent)
+        # Build indices (idempotent) — PatchedKuzuDriver.build_indices_and_constraints
+        # now creates the FTS indices that the base KuzuDriver skips.
         _run_async(_graphiti_instance.build_indices_and_constraints())
 
         logger.info("Graphiti + Kuzu knowledge graph initialized successfully")

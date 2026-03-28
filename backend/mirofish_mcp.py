@@ -161,7 +161,19 @@ def run_simulation(config: dict) -> dict:
             error=f"Invalid config: {exc}",
         ).model_dump()
 
-    result = HeadlessRunner().run(sim_config)
+    try:
+        result = HeadlessRunner().run(sim_config)
+    except RuntimeError as exc:
+        if "camel-oasis" in str(exc):
+            return {
+                "status": "failed",
+                "error": (
+                    "Social simulation requires camel-oasis (not installed). "
+                    "Install with: pip install -r backend/requirements-simulation.txt\n"
+                    "Graph and report tools still work without it."
+                ),
+            }
+        raise
     result_dict = result.model_dump()
 
     # Attach report text inline so the MCP client can read it without filesystem access
@@ -412,8 +424,126 @@ def read_report(report_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+VERSION = "1.0.0"
+
+
+def _run_health_check() -> int:
+    """Run health checks and print results. Returns 0 if all pass, 1 if any fail."""
+    import importlib
+    import socket
+    import urllib.request
+
+    results: list[tuple[bool, str]] = []
+
+    # 1. Check .env exists
+    env_path = os.path.join(_REPO_ROOT, ".env")
+    if os.path.exists(env_path):
+        results.append((True, ".env found"))
+    else:
+        results.append((False, f".env not found (expected at {env_path})"))
+
+    # 2. Check ANTHROPIC_API_KEY
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+    proxy_localhost = "localhost" in base_url or "127.0.0.1" in base_url
+    if not api_key:
+        results.append((False, "ANTHROPIC_API_KEY is not set"))
+    elif api_key == "placeholder" and not proxy_localhost:
+        results.append((False, 'ANTHROPIC_API_KEY is "placeholder" (set a real key or configure a proxy)'))
+    else:
+        results.append((True, "ANTHROPIC_API_KEY configured"))
+
+    # 3. Check Python dependencies
+    missing_deps: list[str] = []
+    for dep in ("graphiti_core", "mcp", "anthropic"):
+        try:
+            importlib.import_module(dep)
+        except ImportError:
+            missing_deps.append(dep)
+    if missing_deps:
+        results.append((False, f"Missing dependencies: {', '.join(missing_deps)}"))
+    else:
+        results.append((True, "Dependencies installed"))
+
+    # 4. Check Kuzu data directory is writable
+    data_dir = os.path.join(_REPO_ROOT, "data")
+    try:
+        os.makedirs(data_dir, exist_ok=True)
+        test_file = os.path.join(data_dir, ".write_test")
+        with open(test_file, "w") as fh:
+            fh.write("ok")
+        os.remove(test_file)
+        results.append((True, "Data directory writable"))
+    except Exception as exc:
+        results.append((False, f"Data directory not writable ({data_dir}): {exc}"))
+
+    # 5. Check LLM endpoint is reachable
+    model_name = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+    endpoint_ok = False
+    endpoint_msg = ""
+    try:
+        import anthropic
+
+        # Strip trailing /v1 — the Anthropic SDK adds it automatically
+        sdk_base_url = base_url
+        if sdk_base_url and sdk_base_url.rstrip("/").endswith("/v1"):
+            sdk_base_url = sdk_base_url.rstrip("/")[:-3].rstrip("/")
+
+        client = anthropic.Anthropic(
+            api_key=api_key or "placeholder",
+            **({"base_url": sdk_base_url} if sdk_base_url else {}),
+        )
+        # Minimal call — one token, fast
+        resp = client.messages.create(
+            model=model_name,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        endpoint_ok = True
+        endpoint_msg = f"LLM endpoint reachable ({model_name})"
+    except Exception as exc:
+        endpoint_msg = f"LLM endpoint unreachable: {exc}"
+
+    results.append((endpoint_ok, endpoint_msg))
+
+    # Print summary
+    print("MiroFish Health Check")
+    for ok, msg in results:
+        mark = "\u2713" if ok else "\u2717"
+        print(f"  {mark} {msg}")
+
+    all_passed = all(ok for ok, _ in results)
+    print()
+    if all_passed:
+        print("All checks passed. Server is ready.")
+    else:
+        failed = sum(1 for ok, _ in results if not ok)
+        print(f"{failed} check(s) failed. Review the issues above before starting the server.")
+
+    return 0 if all_passed else 1
+
+
 def main():
-    parser = argparse.ArgumentParser(description="MiroFish MCP Server")
+    parser = argparse.ArgumentParser(
+        prog="mirofish-mcp",
+        description="MiroFish MCP Server",
+        add_help=False,  # We supply our own --help for a cleaner message
+    )
+    parser.add_argument(
+        "--help", "-h",
+        action="store_true",
+        help="Show this help message and exit",
+    )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Print version and exit",
+    )
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="Run environment and dependency checks, then exit",
+    )
     parser.add_argument(
         "--http",
         action="store_true",
@@ -426,6 +556,34 @@ def main():
         help="Port for HTTP transport (default: 8080)",
     )
     args = parser.parse_args()
+
+    if args.help:
+        print(
+            f"MiroFish MCP Server v{VERSION}\n"
+            "\n"
+            "Usage:\n"
+            "  mirofish-mcp [OPTIONS]\n"
+            "\n"
+            "Options:\n"
+            "  --help            Show this message and exit\n"
+            "  --version         Print version and exit\n"
+            "  --health-check    Run environment checks and exit (0=pass, 1=fail)\n"
+            "  --http            Use HTTP transport instead of stdio\n"
+            "  --port PORT       HTTP port (default: 8080)\n"
+            "\n"
+            "Examples:\n"
+            "  mirofish-mcp                        # stdio mode (Claude Desktop / OpenClaw)\n"
+            "  mirofish-mcp --http --port 8080     # HTTP mode\n"
+            "  mirofish-mcp --health-check         # verify environment before starting\n"
+        )
+        sys.exit(0)
+
+    if args.version:
+        print(f"MiroFish MCP Server v{VERSION}")
+        sys.exit(0)
+
+    if args.health_check:
+        sys.exit(_run_health_check())
 
     if args.http:
         mcp.run(transport="streamable-http", host="0.0.0.0", port=args.port)

@@ -15,15 +15,15 @@ openai>=1.0.0
 
 # ============= Knowledge Graph (Graphiti + Kuzu) =============
 # Self-hosted, embedded — replaces Zep Cloud
-graphiti-core[kuzu,anthropic]
+# Pinned: PatchedKuzuDriver in knowledge_graph.py targets this version.
+# Test before upgrading — see PatchedKuzuDriver docstring.
+graphiti-core[kuzu,anthropic]==0.28.2
 
 # ============= Zep Cloud (LEGACY — optional fallback, not imported at runtime) =============
 # zep-cloud==3.13.0  # Uncomment only if you need the Zep fallback path
 
 # ============= OASIS Social Media Simulation =============
-# OASIS social simulation framework
-camel-oasis==0.2.5
-camel-ai==0.2.78
+# Social simulation (optional, ~500MB): pip install -r requirements-simulation.txt
 
 # ============= File Processing =============
 PyMuPDF>=1.24.0

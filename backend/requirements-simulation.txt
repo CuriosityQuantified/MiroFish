@@ -1,0 +1,8 @@
+# MiroFish social simulation dependencies
+# Required only for run_simulation (Twitter/Reddit agent simulations)
+# Core features (graph building, search, reports) work without these.
+-r requirements.txt
+
+# OASIS social simulation framework
+camel-oasis==0.2.5
+camel-ai==0.2.78

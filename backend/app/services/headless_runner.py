@@ -79,6 +79,15 @@ class HeadlessRunner:
 
         All failures are caught and returned as SimResult(status="failed").
         """
+        # Check OASIS availability before starting simulation
+        try:
+            import camel  # noqa: F401
+        except ImportError:
+            raise RuntimeError(
+                "Social simulation requires camel-oasis. "
+                "Install with: pip install -r backend/requirements-simulation.txt"
+            )
+
         sim_id = f"headless_{uuid.uuid4().hex[:12]}"
         logger.info(f"HeadlessRunner starting: sim_id={sim_id}, config={config.model_dump()}")
 

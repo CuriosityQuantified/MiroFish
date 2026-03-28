@@ -11,9 +11,11 @@ usable from Claude Desktop, Claude Code, OpenClaw, and any MCP-compatible client
 
 ```bash
 cd MiroFish/backend
-pip install -r requirements.txt
+pip install -r requirements.txt              # Core (graph, search, reports)
+pip install -r requirements-simulation.txt   # + Social simulation (optional)
 # or, if using uv:
 uv pip install -r requirements.txt
+uv pip install -r requirements-simulation.txt  # optional
 ```
 
 ### 2. Configure `.env`
@@ -31,6 +33,26 @@ ANTHROPIC_API_KEY=your_key_here
 LLM_SWARM_MODEL=claude-haiku-4-5-20251001
 LLM_ORCHESTRATION_MODEL=claude-sonnet-4-6
 ```
+
+### 3. Embeddings (`OPENAI_API_KEY`) — optional but recommended
+
+MiroFish works without an OpenAI API key, but adding one improves knowledge graph search quality:
+
+| Mode | Key required | Graph search behaviour |
+|------|-------------|------------------------|
+| Keyword / FTS only | None | Works; relies on full-text search — good for exact terms |
+| Hybrid (semantic + keyword) | `OPENAI_API_KEY` | Recommended; finds conceptually related nodes even without exact keyword matches |
+
+Add to `.env`:
+
+```env
+OPENAI_API_KEY=your_openai_key_here
+
+# Optional: point to any OpenAI-compatible embedding endpoint (e.g. local model via Ollama)
+# OPENAI_BASE_URL=http://localhost:11434/v1
+```
+
+If `OPENAI_API_KEY` is not set, the graph still ingests and searches correctly — results may just be fewer or less semantically rich.
 
 ---
 
@@ -89,25 +111,27 @@ Add to your OpenClaw config:
 
 ### Tier 1 — Simulation Lifecycle
 
-| Tool | Description |
-|------|-------------|
-| `create_simulation` | Validate and return a SimConfig dict |
-| `run_simulation` | Execute a full simulation end-to-end, returns SimResult + report text |
-| `get_simulation_status` | Poll a running simulation for progress |
+| Tool | Description | Requires OASIS? |
+|------|-------------|-----------------|
+| `create_simulation` | Validate and return a SimConfig dict | No |
+| `run_simulation` | Execute a full simulation end-to-end, returns SimResult + report text | **Yes** |
+| `get_simulation_status` | Poll a running simulation for progress | **Yes** |
 
 ### Tier 2 — Knowledge Graph
 
-| Tool | Description |
-|------|-------------|
-| `build_knowledge_graph` | Ingest documents into a temporal graph, returns graph_id |
-| `search_graph` | Hybrid search over graph facts (semantic + keyword) |
-| `get_graph_stats` | Node/edge counts and entity type breakdown |
+| Tool | Description | Requires OASIS? |
+|------|-------------|-----------------|
+| `build_knowledge_graph` | Ingest documents into a temporal graph, returns graph_id | No |
+| `search_graph` | Hybrid search over graph facts (semantic + keyword) | No |
+| `get_graph_stats` | Node/edge counts and entity type breakdown | No |
 
 ### Tier 3 — Reports
 
-| Tool | Description |
-|------|-------------|
-| `read_report` | Read a report.md from disk and return Markdown text |
+| Tool | Description | Requires OASIS? |
+|------|-------------|-----------------|
+| `read_report` | Read a report.md from disk and return Markdown text | No |
+
+> **Note:** Tools marked "Requires OASIS" need `pip install -r requirements-simulation.txt`. All other tools work with the core install only.
 
 ---
 
@@ -169,7 +193,25 @@ MiroFish MCP requires **zero external services**:
 
 ---
 
+## Known Issues (graphiti-core 0.28.2)
+
+The following bugs exist in the upstream `graphiti-core==0.28.2` release. All five are patched locally in `backend/app/services/knowledge_graph.py`. No action is needed unless you upgrade graphiti-core, at which point you should re-test each item.
+
+| # | Issue | Symptom | Status |
+|---|-------|---------|--------|
+| 1 | `KuzuDriver` missing `_database` attribute | `AttributeError` on episode ingestion | Patched in `knowledge_graph.py` |
+| 2 | Anthropic SDK base URL double `/v1` | `404 page not found` on LLM calls | Patched — strips trailing `/v1` for native SDK |
+| 3 | Kuzu FTS indices never created | `Binder exception: no index node_name_and_summary` | Patched — manually creates 4 FTS indices |
+| 4 | `NoOpEmbedder` missing `create_batch()` | `NotImplementedError` during edge resolution | Patched — method added |
+| 5 | `NoOpEmbedder` wrong return type | `Unsupported casting LIST...FLOAT[1]` | Patched — returns flat `list[float]` |
+
+All 5 issues are patched in `backend/app/services/knowledge_graph.py`. No action needed unless you upgrade graphiti-core.
+
+---
+
 ## Troubleshooting
+
+### General
 
 **`ANTHROPIC_API_KEY is not configured`** — check your `.env` file is in the repo root and `ANTHROPIC_API_KEY` is set.
 
@@ -177,4 +219,30 @@ MiroFish MCP requires **zero external services**:
 
 **Simulation times out** — reduce `max_rounds` or `num_agents`. Each round makes LLM calls for every agent. Start with `max_rounds=5, num_agents=10`.
 
-**Graph search returns empty results** — if no `OPENAI_API_KEY` is set, the no-op embedder is used and semantic search quality is reduced. Keyword search still works. Set an OpenAI-compatible embedding endpoint for full hybrid search.
+**Graph search returns empty results** — if `OPENAI_API_KEY` is not set, the no-op embedder is used and semantic search quality is reduced. Keyword / FTS search still works. Set `OPENAI_API_KEY` (or `OPENAI_BASE_URL` for a local model) to enable full hybrid search.
+
+### MCP-specific
+
+**Server won't start**
+- Confirm `.env` exists in the repo root and `ANTHROPIC_API_KEY` is set.
+- Run a quick health check: `python backend/mirofish_mcp.py --health-check`
+- Check for Python import errors by running the server manually and reading stderr.
+
+**Tools not showing in Claude Code**
+- Verify `.mcp.json` syntax is valid JSON (no trailing commas, correct paths).
+- Restart the Claude Code session — tools are loaded at session start.
+- Confirm the `cwd` in `.mcp.json` points to the MiroFish repo root.
+
+**Tools not showing in Claude Desktop**
+- Confirm the config is in the correct location: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS).
+- Fully quit and relaunch Claude Desktop — a reload is not enough.
+- Check that the `command` and `args` paths are absolute or correctly relative to `cwd`.
+
+**Knowledge graph returns 0 nodes**
+- Verify `ANTHROPIC_API_KEY` is valid and has quota — entity extraction requires LLM calls.
+- Check server logs in `backend/logs/` for extraction errors.
+- Ensure the documents passed to `build_knowledge_graph` exist and are readable.
+
+**Search returns fewer results than expected**
+- This is expected when `OPENAI_API_KEY` is not set. The FTS fallback requires exact or near-exact keyword matches; add `OPENAI_API_KEY` for semantic (vector) search.
+- If `OPENAI_API_KEY` is set but results are still thin, the graph may have few nodes — run `get_graph_stats` to verify ingestion completed successfully.

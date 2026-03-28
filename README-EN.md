@@ -6,7 +6,7 @@
 
 简洁通用的群体智能引擎，预测万物
 </br>
-<em>A Simple and Universal Swarm Intelligence Engine, Predicting Anything</em>
+<em>Simulate how the world reacts — using AI agent swarms</em>
 
 <a href="https://www.shanda.com/" target="_blank"><img src="./static/image/shanda_logo.png" alt="666ghj%2MiroFish | Shanda" height="40"/></a>
 
@@ -162,6 +162,9 @@ npm run backend   # Start backend only
 npm run frontend  # Start frontend only
 ```
 
+> **Core install** (~50MB): knowledge graph building, search, reports, MCP tools
+> **With simulation** (+500MB): adds Twitter/Reddit AI agent simulations via CAMEL-AI OASIS
+
 ### Option 2: Docker Deployment
 
 ```bash
@@ -175,6 +178,12 @@ docker compose up -d
 Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`
 
 > Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
+
+## 📊 Sample Output
+
+See a full MiroFish prediction report: **[Sample Report →](./docs/sample-report.md)**
+
+---
 
 ## 📬 Join the Conversation
 
