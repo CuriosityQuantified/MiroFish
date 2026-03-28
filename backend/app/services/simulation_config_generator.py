@@ -864,43 +864,42 @@ Write all post content and descriptions in English."""
                 "summary": e.summary[:summary_len] if e.summary else ""
             })
         
-        prompt = f"""基于以下信息，为每个实体生成社交媒体活动配置。
+        prompt = f"""Based on the following information, generate social media activity configurations for each entity.
 
-模拟需求: {simulation_requirement}
+Simulation requirement: {simulation_requirement}
 
-## 实体列表
+## Entity list
 ```json
 {json.dumps(entity_list, ensure_ascii=False, indent=2)}
 ```
 
-## 任务
-为每个实体生成活动配置，注意：
-- **时间符合in国人作息**：凌晨0-5点几乎不活动，晚间19-22点最活跃
-- **官方机构**（University/GovernmentAgency）：活跃度低(0.1-0.3)，工作时间(9-17)活动，响应慢(60-240分钟)，影响力高(2.5-3.0)
-- **媒体**（MediaOutlet）：活跃度in(0.4-0.6)，全天活动(8-23)，响应快(5-30分钟)，影响力高(2.0-2.5)
-- **个人**（Student/Person/Alumni）：活跃度高(0.6-0.9)，主要晚间活动(18-23)，响应快(1-15分钟)，影响力低(0.8-1.2)
-- **公众人物/专家**：活跃度in(0.4-0.6)，影响力in高(1.5-2.0)
+## Task
+Generate activity configs for each entity. Guidelines:
+- **Official institutions** (University/GovernmentAgency): low activity (0.1-0.3), work hours only (9-17), slow response (60-240 min), high influence (2.5-3.0)
+- **Media** (MediaOutlet): medium activity (0.4-0.6), all-day (8-23), fast response (5-30 min), high influence (2.0-2.5)
+- **Individuals** (Student/Person/Alumni): high activity (0.6-0.9), mainly evenings (18-23), fast response (1-15 min), low influence (0.8-1.2)
+- **Public figures/experts**: medium activity (0.4-0.6), medium-high influence (1.5-2.0)
 
-返回JSON格式（不要markdown）：
+Return JSON format (no markdown):
 {{
     "agent_configs": [
         {{
-            "agent_id": <必须与输入一致>,
+            "agent_id": <must match input>,
             "activity_level": <0.0-1.0>,
-            "posts_per_hour": <发帖频率>,
-            "comments_per_hour": <评论频率>,
-            "active_hours": [<活跃小时列表，考虑in国人作息>],
-            "response_delay_min": <最小响应延迟分钟>,
-            "response_delay_max": <最大响应延迟分钟>,
-            "sentiment_bias": <-1.0到1.0>,
+            "posts_per_hour": <posting frequency>,
+            "comments_per_hour": <comment frequency>,
+            "active_hours": [<list of active hours 0-23>],
+            "response_delay_min": <min response delay in minutes>,
+            "response_delay_max": <max response delay in minutes>,
+            "sentiment_bias": <-1.0 to 1.0>,
             "stance": "<supportive/opposing/neutral/observer>",
-            "influence_weight": <影响力权重>
+            "influence_weight": <influence weight>
         }},
         ...
     ]
 }}"""
 
-        system_prompt = "你Yes社交媒体行为分析专家。返回纯JSON，配置需符合in国人作息习惯。"
+        system_prompt = "You are a social media behavior analysis expert. Return pure JSON only."
         
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)

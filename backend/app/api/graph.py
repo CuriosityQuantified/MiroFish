@@ -263,10 +263,10 @@ def build_graph():
     
     Request (JSON):
         {
-            "project_id": "proj_xxxx",  // 必填，来自接口1
-            "graph_name": "Graph name",    // 可选
-            "chunk_size": 500,          // 可选，默认500
-            "chunk_overlap": 50         // 可选，默认50
+            "project_id": "proj_xxxx",  // required
+            "graph_name": "Graph name",    // optional
+            "chunk_size": 500,          // optional, default 500
+            "chunk_overlap": 50         // optional, default 50
         }
         
     Returns:
@@ -275,7 +275,7 @@ def build_graph():
             "data": {
                 "project_id": "proj_xxxx",
                 "task_id": "task_xxxx",
-                "message": "图谱构建任务已启动"
+                "message": "Graph build task started"
             }
         }
     """

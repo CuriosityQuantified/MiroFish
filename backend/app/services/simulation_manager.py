@@ -289,7 +289,7 @@ class SimulationManager:
             if progress_callback:
                 progress_callback(
                     "reading", 100, 
-                    f"完成，共 {filtered.filtered_count} 个实体",
+                    f"Done, {filtered.filtered_count} entities",
                     current=filtered.filtered_count,
                     total=filtered.filtered_count
                 )
