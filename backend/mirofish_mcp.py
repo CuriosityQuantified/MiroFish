@@ -55,15 +55,12 @@ from app.services.simulation_runner import SimulationRunner  # noqa: E402
 mcp = FastMCP(
     "MiroFish",
     instructions=(
-        "MiroFish is a multi-agent swarm intelligence simulation engine. "
-        "Use these tools to: build temporal knowledge graphs from documents, "
-        "run social simulations with AI agents, query simulation results, "
-        "and generate prediction reports.\n\n"
-        "Typical workflow:\n"
-        "1. (Optional) build_knowledge_graph() with source documents\n"
-        "2. create_simulation() to produce a validated config\n"
-        "3. run_simulation() to execute — returns report text when done\n"
-        "4. search_graph() to query specific facts from the graph"
+        "MiroFish simulates how AI agent swarms react to any topic on social platforms "
+        "and builds temporal knowledge graphs from documents. "
+        "Call create_simulation() first (validates config, no LLM cost), "
+        "then run_simulation() to execute. "
+        "Use build_knowledge_graph() to ground agents in real documents before simulating. "
+        "See docs/skills/SKILL.md for workflows and reference guides."
     ),
 )
 
