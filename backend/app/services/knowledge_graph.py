@@ -45,18 +45,6 @@ def _get_db_path() -> str:
     )
 
 
-def _get_event_loop() -> asyncio.AbstractEventLoop:
-    """Get or create an event loop for running async Graphiti calls."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop
-
-
 def _run_async(coro):
     """Run an async coroutine from synchronous code, safely."""
     try:
@@ -86,8 +74,11 @@ def _run_async(coro):
             raise exc[0]
         return result[0]
     else:
-        loop = _get_event_loop()
-        return loop.run_until_complete(coro)
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 
 
 def _define_patched_kuzu_driver():
